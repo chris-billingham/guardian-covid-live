@@ -23,7 +23,7 @@ total_articles <- page %>%
 num_pages <- (total_articles %/% 20) + 1
 
 # make all the pages
-all_pages <- paste0(url, "?page=", seq(1, num_pages, 1))
+all_pages2 <- paste0(url, "?page=", seq(1, num_pages, 1))
 
 # function to get all the urls
 get_urls <- function(url) {
