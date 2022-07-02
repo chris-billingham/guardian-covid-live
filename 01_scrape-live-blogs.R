@@ -3,6 +3,8 @@ library(rvest)
 library(lubridate)
 library(pbapply)
 library(polite)
+library(furrr)
+library(progressr)
 
 # get the url
 url <- "https://www.theguardian.com/world/series/coronavirus-live"
@@ -49,7 +51,7 @@ all_articles <- map(all_pages, get_urls) %>%
   unlist()
 
 # oh for progress bars with purrr
-# all_articles <- pblapply(all_pages, get_urls) %>% unlist
+all_articles <- pblapply(all_pages, get_urls) %>% unlist
 
 # function to read an article
 get_article <- function(url) {
@@ -115,9 +117,30 @@ possible_article <- possibly(get_article,
                              tibble(date_time = character(), 
                                     words = character()))
 
+plan(multisession, workers = parallel::detectCores() - 1)
+
 # iterate through all the pages and get all the words from all the articles
 # this took about 2hr 30m on 2020-08-14
-all_live_blogs <- map_dfr(all_articles, possible_article)
+#all_live_blogs <- map_dfr(all_articles, possible_article)
+handlers(list(
+  handler_progress(
+    format   = ":spin :current/:total (:message) [:bar] :percent in :elapsed ETA: :eta",
+    width    = 120,
+    complete = "+"
+  )
+))
+
+with_progress({
+  p <- progressor(steps = length(all_articles))
+  
+  all_live_blogs <- future_map_dfr(all_articles, ~{
+    p()
+    possible_article(.x)
+  })
+})
+
+
+#all_live_blogs <- future_map_dfr(all_articles, possible_article)
 
 # i love progress bars
 pboptions(nout = 1000)
