@@ -1,7 +1,6 @@
 library(tidyverse)
 library(rvest)
 library(lubridate)
-library(pbapply)
 library(polite)
 library(furrr)
 library(progressr)
@@ -46,12 +45,30 @@ get_urls <- function(url) {
   return(urls)
 }
 
-# get all the articles by iterating from all the pages
-all_articles <- map(all_pages, get_urls) %>% 
-  unlist()
+# set up furrr
+plan(multisession, workers = parallel::detectCores() - 1)
 
-# oh for progress bars with purrr
-all_articles <- pblapply(all_pages, get_urls) %>% unlist
+# create handler for progressr
+handlers(list(
+  handler_progress(
+    format   = ":spin :current/:total (:message) [:bar] :percent in :elapsed ETA: :eta",
+    width    = 120,
+    complete = "+"
+  )
+))
+
+# get all the articles by iterating from all the pages
+with_progress({
+  p <- progressor(steps = length(all_pages))
+  
+  all_articles <- map(all_pages, ~{
+    p()
+    get_urls(.x)
+  })
+})
+
+all_articles <- all_articles %>% 
+  unlist()
 
 # function to read an article
 get_article <- function(url) {
@@ -117,35 +134,14 @@ possible_article <- possibly(get_article,
                              tibble(date_time = character(), 
                                     words = character()))
 
-plan(multisession, workers = parallel::detectCores() - 1)
-
-# iterate through all the pages and get all the words from all the articles
-# this took about 2hr 30m on 2020-08-14
-#all_live_blogs <- map_dfr(all_articles, possible_article)
-handlers(list(
-  handler_progress(
-    format   = ":spin :current/:total (:message) [:bar] :percent in :elapsed ETA: :eta",
-    width    = 120,
-    complete = "+"
-  )
-))
-
 with_progress({
-  p <- progressor(steps = length(all_articles))
+  p <- progressor(steps = length(all_articles[1:50]))
   
-  all_live_blogs <- future_map_dfr(all_articles, ~{
+  all_live_blogs <- future_map_dfr(all_articles[1:50], ~{
     p()
     possible_article(.x)
   })
 })
-
-
-#all_live_blogs <- future_map_dfr(all_articles, possible_article)
-
-# i love progress bars
-pboptions(nout = 1000)
-all_live_blogs <- pblapply(all_articles, possible_article) %>% 
-  bind_rows()
 
 # quick tidy up
 all_blogs_clean <- all_live_blogs %>% 
